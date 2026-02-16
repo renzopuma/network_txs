@@ -1,0 +1,5 @@
+pandas
+pyvis
+networkx
+numpy
+git+https://github.com/streamlit/gsheets-connection
