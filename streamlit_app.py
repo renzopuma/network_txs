@@ -1,9 +1,9 @@
 """
 📊 Dashboard de Análisis Fiscal con Enfoque de Redes
 ====================================================
-Versión 5: Manejo robusto de datos reales
+Versión 6: Manejo robusto + Documentación completa
 
-Ejecutar con: streamlit run fiscal_dashboard_v5.py
+Ejecutar con: streamlit run fiscal_dashboard_v6.py
 """
 
 import streamlit as st
@@ -34,7 +34,7 @@ except ImportError:
     st.warning("⚠️ Plotly no está instalado. Instálalo con: pip install plotly")
 
 # ============================================================================
-# TEXTOS DE DOCUMENTACIÓN
+# DOCUMENTACIÓN COMPLETA (del README_fiscal_analysis.md)
 # ============================================================================
 
 DOCS = {
@@ -43,44 +43,279 @@ DOCS = {
     
     Este dashboard implementa metodologías de **Input-Output** para analizar cómo los impuestos 
     y subsidios afectan la producción sectorial, considerando las **interdependencias entre sectores**.
+    
+    ### 🎯 Objetivo
+    Medir el impacto sistémico de la política fiscal considerando que los sectores económicos 
+    están conectados a través de cadenas de suministro.
+    
+    ### 📚 Referencia Metodológica
+    - Miller & Blair (2009): "Input-Output Analysis: Foundations and Extensions"
+    - Base de datos EORA26: https://worldmrio.com/
+    """,
+    
+    "data_structure": """
+    ## 📁 Estructura de Datos Requerida
+    
+    Este framework requiere **dos archivos CSV**:
+    
+    ### Archivo 1: `connections.csv`
+    Contiene la **matriz de flujos intersectoriales** (matriz Z de Input-Output).
+    
+    | Columna | Tipo | Descripción |
+    |---------|------|-------------|
+    | `country_code` | string | Código ISO del país |
+    | `year` | integer | Año de los datos |
+    | `from_sector` | string | Sector de origen (proveedor) |
+    | `to_sector` | string | Sector de destino (demandante) |
+    | `flow_value` | float | Valor del flujo en millones USD |
+    
+    ### Archivo 2: `sector_variables.csv`
+    Contiene las **variables por sector**, incluyendo el componente fiscal.
+    
+    | Columna | Tipo | Descripción |
+    |---------|------|-------------|
+    | `country_code` | string | Código ISO del país |
+    | `year` | integer | Año de los datos |
+    | `sector` | string | Nombre del sector |
+    | `gross_output` | float | Producción bruta total (X) |
+    | `value_added` | float | Valor agregado total (VA) |
+    | `taxes_subsidies` | float | Impuestos menos subsidios (T) |
+    | `final_demand` | float | Demanda final (Y) |
     """,
     
     "tax_convention": """
-    ### ⚠️ Convención del Campo `taxes_subsidies`
+    ## ⚠️ Convención del Campo `taxes_subsidies`
+    
+    Este campo es **crítico** y sigue la convención de EORA26:
     
     | Signo | Interpretación | Ejemplo |
     |-------|---------------|---------|
-    | **T > 0** | 🟢 **SUBSIDIO NETO** | Agricultura, Transporte público |
-    | **T < 0** | 🔴 **IMPUESTO NETO** | Minería, Manufactura |
+    | **POSITIVO (+)** | 🟢 **SUBSIDIO NETO** - El sector recibe más subsidios de los que paga en impuestos | Agricultura, Transporte público |
+    | **NEGATIVO (-)** | 🔴 **IMPUESTO NETO** - El sector paga más impuestos de los que recibe en subsidios | Minería, Manufactura, Servicios financieros |
+    
+    ### Sectores típicamente subsidiados (T > 0):
+    - Agricultura
+    - Pesca
+    - Educación y Salud
+    - Transporte público
+    
+    ### Sectores típicamente gravados (T < 0):
+    - Minería
+    - Petróleo y Químicos
+    - Manufactura
+    - Servicios financieros
+    """,
+    
+    "matrix_z": """
+    ### 📦 Matriz Z - Consumo Intermedio
+    
+    La matriz **Z** representa los flujos monetarios entre sectores.
+    
+    **Interpretación:** `Z[i,j]` = Cuánto compra el sector `j` del sector `i` (en millones USD)
+    
+    - Las **filas** representan las ventas de cada sector (proveedores)
+    - Las **columnas** representan las compras de cada sector (demandantes)
+    - La **diagonal** representa transacciones intra-sectoriales
     """,
     
     "matrix_a": """
     ### 📐 Matriz A - Coeficientes Técnicos
-    **Fórmula:** `A = Z × diag(X)⁻¹`
+    
+    **Fórmula:**
+    ```
+    A = Z × diag(X)⁻¹
+    ```
+    
+    **Donde:**
+    - `Z`: Matriz de consumo intermedio (n×n)
+    - `X`: Vector de producción bruta (n×1)
+    
+    **Interpretación:** `A[i,j]` = Cantidad de insumo del sector `i` necesario para producir **1 unidad** del sector `j`
+    
+    **Propiedad importante:** La suma de cada columna debe ser < 1 para que la economía sea viable 
+    (debe quedar margen para el valor agregado).
     """,
     
     "matrix_l": """
-    ### 🔄 Matriz L - Leontief
-    **Fórmula:** `L = (I - A)⁻¹`
+    ### 🔄 Matriz L - Leontief (Multiplicadores)
+    
+    **Fórmula:**
+    ```
+    L = (I - A)⁻¹
+    ```
+    
+    **Donde:**
+    - `I`: Matriz identidad
+    - `A`: Matriz de coeficientes técnicos
+    
+    **Interpretación:** `L[i,j]` = Producción **total** del sector `i` necesaria (directa + indirecta) 
+    para satisfacer **1 unidad** de demanda final del sector `j`
+    
+    **Propiedades:**
+    - Todos los elementos son ≥ 0
+    - La diagonal es siempre ≥ 1 (incluye el efecto directo)
+    - Cumple la identidad: `X = L × Y`
     """,
     
     "multipliers": """
     ### 📊 Multiplicadores y Linkages
-    - **Forward Linkage (FL):** Importancia como **proveedor**
-    - **Backward Linkage (BL):** Importancia como **demandante**
+    
+    #### Multiplicador Tipo I
+    ```
+    M[j] = Σᵢ L[i,j]  (suma de la columna j)
+    ```
+    **Interpretación:** Producción total generada en **toda la economía** por cada unidad de demanda final del sector `j`.
+    
+    #### Forward Linkage (FL)
+    ```
+    FL[i] = Σⱼ L[i,j]  (suma de la fila i)
+    ```
+    **Interpretación:** Importancia del sector `i` como **proveedor** de insumos a otros sectores.
+    
+    #### Backward Linkage (BL)
+    ```
+    BL[j] = Σᵢ L[i,j]  (suma de la columna j)
+    ```
+    **Interpretación:** Importancia del sector `j` como **demandante** de insumos de otros sectores.
+    
+    #### Clasificación Sectorial
+    | FL Normalizado | BL Normalizado | Clasificación |
+    |----------------|----------------|---------------|
+    | > 1 | > 1 | 🔴 **Sector Clave** - Alto impacto como proveedor Y demandante |
+    | > 1 | ≤ 1 | 🔵 **Forward Oriented** - Importante proveedor de insumos |
+    | ≤ 1 | > 1 | 🟢 **Backward Oriented** - Importante demandante de insumos |
+    | ≤ 1 | ≤ 1 | ⚪ **Linkages Débiles** - Poco integrado en la economía |
+    """,
+    
+    "tax_rate": """
+    ### 💰 Tasa de Impuesto por Unidad
+    
+    **Fórmula:**
+    ```
+    t[i] = T[i] / X[i]
+    ```
+    
+    **Donde:**
+    - `T[i]`: Impuesto neto (-) o subsidio neto (+) del sector `i`
+    - `X[i]`: Producción bruta del sector `i`
+    
+    **Interpretación:** Proporción del componente fiscal respecto a la producción total del sector.
     """,
     
     "hef_method": """
-    ### 🔬 Método HEF
-    Simula qué pasaría si **eliminamos** el componente fiscal de cada sector.
+    ### 🔬 Método de Extracción Hipotética Fiscal (HEF)
     
-    - Eliminar **IMPUESTO** (T<0) → Costos ↓ → Producción **↑**
-    - Eliminar **SUBSIDIO** (T>0) → Costos ↑ → Producción **↓**
+    **Objetivo:** Medir la **importancia sistémica** del componente fiscal de cada sector.
+    
+    #### Mecanismo
+    1. **Calcular** producción con el impuesto/subsidio actual
+    2. **Simular** eliminación del componente fiscal → ajuste en costos
+    3. **Recalcular** equilibrio de producción (nueva matriz L)
+    4. **Medir** el cambio en la producción total
+    
+    #### Lógica de Signos
+    | Acción | Efecto en Costos | Efecto en Producción |
+    |--------|------------------|----------------------|
+    | Eliminar **IMPUESTO** (T<0) | Costos **BAJAN** | Producción **SUBE** ↑ |
+    | Eliminar **SUBSIDIO** (T>0) | Costos **SUBEN** | Producción **BAJA** ↓ |
+    
+    #### Fórmula del Ajuste
+    ```
+    Cambio en costo = -t[j]  (negativo de la tasa fiscal)
+    
+    A_nuevo[j,i] = A[j,i] × (1 + elasticidad × cambio_costo)
+    ```
+    
+    #### Métricas de Resultado
+    - **Impacto Absoluto:** `ΔX_total = X_nuevo - X_original`
+    - **Impacto Relativo:** `ΔX% = (ΔX_total / X_original) × 100`
+    - **Importancia Sistémica:** Ratio de efecto indirecto vs directo
     """,
     
     "network_effects": """
-    ### 🌐 Efecto de Red
-    **Fórmula:** `NetEffect[j] = Σᵢ A[i,j] × t[i]`
+    ### 🌐 Efecto de Red (Spillover Fiscal)
+    
+    **Fórmula:**
+    ```
+    NetEffect[j] = Σᵢ A[i,j] × t[i]
+    ```
+    
+    **Interpretación:** Impacto ponderado de los impuestos/subsidios de los **proveedores** del sector `j`.
+    
+    - **NetEffect > 0:** El sector se beneficia de subsidios a sus proveedores (menores costos de insumos)
+    - **NetEffect < 0:** El sector sufre por impuestos de sus proveedores (mayores costos de insumos)
+    
+    **Efecto Total:**
+    ```
+    Efecto_Total[j] = t[j] + NetEffect[j]
+    ```
+    Combina el efecto fiscal propio más el efecto indirecto de la red.
+    """,
+    
+    "shock_propagation": """
+    ### 🌊 Propagación de Shocks
+    
+    **Mecanismo:** Un shock inicial en un sector se propaga a través de la red en rondas sucesivas.
+    
+    **Fórmula iterativa:**
+    ```
+    ε⁽⁰⁾ = shock inicial (solo en sector j)
+    ε⁽ᵏ⁺¹⁾ = Aᵀ × ε⁽ᵏ⁾
+    
+    Efecto acumulado = Σₖ ε⁽ᵏ⁾
+    ```
+    
+    **Convergencia:** El efecto acumulado converge a `(I - Aᵀ)⁻¹ × ε⁽⁰⁾ = Lᵀ × ε⁽⁰⁾`
+    
+    **Ratio Multiplicador:** `Efecto_Total / Shock_Inicial` indica cuántas veces se amplifica el shock.
+    """,
+    
+    "eora26_sectors": """
+    ### 🏭 Sectores EORA26
+    
+    | # | Sector | # | Sector |
+    |---|--------|---|--------|
+    | 1 | Agriculture | 14 | Construction |
+    | 2 | Fishing | 15 | Maintenance and Repair |
+    | 3 | Mining and Quarrying | 16 | Wholesale Trade |
+    | 4 | Food & Beverages | 17 | Retail Trade |
+    | 5 | Textiles and Wearing Apparel | 18 | Hotels and Restaurants |
+    | 6 | Wood and Paper | 19 | Transport |
+    | 7 | Petroleum, Chemical Products | 20 | Post and Telecommunications |
+    | 8 | Metal Products | 21 | Financial Services |
+    | 9 | Electrical and Machinery | 22 | Public Administration |
+    | 10 | Transport Equipment | 23 | Education, Health and Other Services |
+    | 11 | Other Manufacturing | 24 | Private Households |
+    | 12 | Recycling | 25 | Others |
+    | 13 | Electricity, Gas and Water | 26 | Re-export & Re-import |
+    """,
+    
+    "methods_summary": """
+    ## 🔬 Métodos Implementados
+    
+    ### Método 2: Hipotético de Extracción Fiscal (HEF)
+    
+    **Objetivo:** Medir la importancia sistémica del componente fiscal de cada sector.
+    
+    **Pasos:**
+    1. Calcular producción con el impuesto actual
+    2. Simular eliminación del impuesto (ajuste en costos)
+    3. Recalcular equilibrio de producción
+    4. Medir el cambio en la producción total
+    
+    **Métricas:**
+    - **Impacto absoluto:** Cambio en producción total
+    - **Impacto relativo:** Cambio como % de producción total
+    - **Importancia sistémica:** Ratio de efecto indirecto vs directo
+    
+    ### Método 5: Framework Integrado
+    
+    **Fases:**
+    1. **Construcción de redes:** Una red I-O por cada país-año
+    2. **Caracterización:** Forward/backward linkages, centralidad
+    3. **Análisis de impacto:** HEF + multiplicadores
+    4. **Perfiles:** Agregación por país y sector
+    5. **Síntesis:** Comparación y patrones
     """
 }
 
@@ -91,11 +326,6 @@ DOCS = {
 def clean_dataframe(df, df_type='variables'):
     """
     Limpia y valida el DataFrame.
-    
-    Parameters:
-    -----------
-    df : DataFrame
-    df_type : 'variables' o 'connections'
     """
     df = df.copy()
     
@@ -324,11 +554,11 @@ class FiscalNetworkAnalyzer:
                     if idx is not None:
                         arr[idx] = value
         
-        # Matriz A
+        # Matriz A = Z × diag(X)⁻¹
         X_inv = np.where(self.X > 0, 1/self.X, 0)
         self.A = self.Z @ np.diag(X_inv)
         
-        # Matriz L
+        # Matriz L = (I - A)⁻¹
         try:
             I_minus_A = np.eye(n) - self.A
             if np.linalg.det(I_minus_A) != 0:
@@ -338,7 +568,7 @@ class FiscalNetworkAnalyzer:
         except Exception:
             self.L = np.eye(n)
         
-        # Tasa de impuesto
+        # Tasa de impuesto: t = T / X
         self.tax_rate = np.where(self.X > 0, self.T / self.X, 0)
     
     def compute_multipliers(self):
@@ -346,8 +576,8 @@ class FiscalNetworkAnalyzer:
         if self.n_sectors == 0:
             return pd.DataFrame()
         
-        forward = self.L.sum(axis=1)
-        backward = self.L.sum(axis=0)
+        forward = self.L.sum(axis=1)  # Suma por fila
+        backward = self.L.sum(axis=0)  # Suma por columna
         
         fl_mean = forward.mean() if forward.mean() > 0 else 1
         bl_mean = backward.mean() if backward.mean() > 0 else 1
@@ -377,7 +607,13 @@ class FiscalNetworkAnalyzer:
         })
     
     def fiscal_hypothetical_extraction(self, elasticity=0.5):
-        """Ejecuta análisis HEF."""
+        """
+        Ejecuta análisis HEF para todos los sectores.
+        
+        Mecanismo:
+        1. Si T[j] < 0 (impuesto): eliminarlo REDUCE costos → más producción
+        2. Si T[j] > 0 (subsidio): eliminarlo AUMENTA costos → menos producción
+        """
         if self.n_sectors == 0:
             return pd.DataFrame()
         
@@ -385,14 +621,17 @@ class FiscalNetworkAnalyzer:
         X_total_original = self.X.sum()
         
         for j in range(self.n_sectors):
+            # Cambio en costos al eliminar el componente fiscal
             cost_change = -self.tax_rate[j]
             
+            # Ajustar matriz A
             A_new = self.A.copy()
             for i in range(self.n_sectors):
                 if self.A[j, i] > 0:
                     demand_change = elasticity * cost_change
                     A_new[j, i] = self.A[j, i] * (1 + demand_change)
             
+            # Recalcular L y X
             try:
                 L_new = np.linalg.inv(np.eye(self.n_sectors) - A_new)
             except Exception:
@@ -417,14 +656,19 @@ class FiscalNetworkAnalyzer:
         return pd.DataFrame(results)
     
     def simulate_shock(self, sector_idx, magnitude, n_iterations=10):
-        """Simula propagación de shock."""
+        """
+        Simula propagación de shock fiscal.
+        
+        ε⁽⁰⁾ = shock inicial
+        ε⁽ᵏ⁺¹⁾ = Aᵀ × ε⁽ᵏ⁾
+        """
         if self.n_sectors == 0 or sector_idx >= self.n_sectors:
             return {'trajectory': [0], 'cumulative': np.zeros(1), 'total_effect': 0}
         
         epsilon = np.zeros(self.n_sectors)
         epsilon[sector_idx] = magnitude * self.X[sector_idx]
         
-        W = self.A.T
+        W = self.A.T  # Matriz de transmisión
         trajectory = [epsilon.sum()]
         cumulative = epsilon.copy()
         
@@ -440,7 +684,11 @@ class FiscalNetworkAnalyzer:
         }
     
     def compute_network_effects(self):
-        """Calcula efectos de red."""
+        """
+        Calcula efectos de red (spillovers fiscales).
+        
+        NetEffect[j] = Σᵢ A[i,j] × t[i]
+        """
         if self.n_sectors == 0:
             return pd.DataFrame()
         
@@ -461,9 +709,9 @@ class FiscalNetworkAnalyzer:
         checks = {}
         
         try:
-            checks['X ≈ Z.sum + Y'] = np.allclose(self.X, self.Z.sum(axis=1) + self.Y, rtol=0.1)
+            checks['X ≈ Z.sum(fila) + Y'] = np.allclose(self.X, self.Z.sum(axis=1) + self.Y, rtol=0.1)
         except:
-            checks['X ≈ Z.sum + Y'] = False
+            checks['X ≈ Z.sum(fila) + Y'] = False
         
         try:
             checks['X ≈ L × Y'] = np.allclose(self.X, self.L @ self.Y, rtol=0.1)
@@ -472,16 +720,16 @@ class FiscalNetworkAnalyzer:
         
         try:
             col_sums = self.A.sum(axis=0)
-            checks['Σ A[i,j] < 1'] = (col_sums[col_sums > 0] < 1.5).all()
+            checks['Σ A[i,j] < 1 ∀j'] = (col_sums[col_sums > 0] < 1.5).all()
         except:
-            checks['Σ A[i,j] < 1'] = False
+            checks['Σ A[i,j] < 1 ∀j'] = False
         
         checks['L ≥ 0'] = (self.L >= -0.01).all()
         
         return checks
     
     def get_comparison_by_country(self):
-        """Métricas por país."""
+        """Métricas comparativas por país."""
         if len(self.countries) <= 1:
             return None
         
@@ -507,7 +755,7 @@ class FiscalNetworkAnalyzer:
         return pd.DataFrame(results) if results else None
     
     def get_comparison_by_year(self):
-        """Métricas por año."""
+        """Métricas comparativas por año."""
         if len(self.years) <= 1:
             return None
         
@@ -630,9 +878,18 @@ def main():
         
         st.markdown("---")
         st.subheader("🔧 Parámetros")
-        elasticity = st.slider("Elasticidad HEF:", 0.1, 1.0, 0.5, 0.1)
-        shock_magnitude = st.slider("Magnitud shock (%):", 1, 20, 10) / 100
-        shock_iterations = st.slider("Rondas propagación:", 5, 20, 10)
+        elasticity = st.slider(
+            "Elasticidad HEF:", 0.1, 1.0, 0.5, 0.1,
+            help="Elasticidad de la demanda respecto al precio"
+        )
+        shock_magnitude = st.slider(
+            "Magnitud shock (%):", 1, 20, 10,
+            help="Porcentaje del output del sector"
+        ) / 100
+        shock_iterations = st.slider(
+            "Rondas propagación:", 5, 20, 10,
+            help="Iteraciones de propagación"
+        )
         
         st.markdown("---")
         st.markdown(f"**Selección:** {len(selected_countries)} país(es), {len(selected_years)} año(s)")
@@ -649,7 +906,6 @@ def main():
         )
     except Exception as e:
         st.error(f"Error al crear el analizador: {e}")
-        st.write("Detalles del error para debugging:")
         st.exception(e)
         st.stop()
     
@@ -657,12 +913,55 @@ def main():
     # TABS
     # =========================================================================
     tabs = st.tabs([
-        "📋 Resumen", "🌍 Comparación", "🔢 Matrices", 
+        "📚 Documentación", "📋 Resumen", "🌍 Comparación", "🔢 Matrices", 
         "📊 Multiplicadores", "💰 HEF", "🌊 Propagación", "✅ Verificación"
     ])
     
-    # TAB 1: RESUMEN
+    # =========================================================================
+    # TAB 0: DOCUMENTACIÓN
+    # =========================================================================
     with tabs[0]:
+        st.markdown(DOCS["intro"])
+        
+        st.markdown("---")
+        st.markdown(DOCS["tax_convention"])
+        
+        st.markdown("---")
+        with st.expander("📁 Estructura de Datos Requerida", expanded=False):
+            st.markdown(DOCS["data_structure"])
+        
+        with st.expander("📐 Fórmulas - Matrices (A y L)", expanded=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(DOCS["matrix_a"])
+            with col2:
+                st.markdown(DOCS["matrix_l"])
+        
+        with st.expander("📊 Fórmulas - Multiplicadores y Linkages", expanded=False):
+            st.markdown(DOCS["multipliers"])
+        
+        with st.expander("💰 Tasa de Impuesto", expanded=False):
+            st.markdown(DOCS["tax_rate"])
+        
+        with st.expander("🔬 Método HEF - Extracción Hipotética Fiscal", expanded=False):
+            st.markdown(DOCS["hef_method"])
+        
+        with st.expander("🌐 Efectos de Red (Spillovers)", expanded=False):
+            st.markdown(DOCS["network_effects"])
+        
+        with st.expander("🌊 Propagación de Shocks", expanded=False):
+            st.markdown(DOCS["shock_propagation"])
+        
+        with st.expander("🔬 Resumen de Métodos", expanded=False):
+            st.markdown(DOCS["methods_summary"])
+        
+        with st.expander("🏭 Sectores EORA26", expanded=False):
+            st.markdown(DOCS["eora26_sectors"])
+    
+    # =========================================================================
+    # TAB 1: RESUMEN
+    # =========================================================================
+    with tabs[1]:
         st.header("📋 Resumen de Datos")
         
         col1, col2, col3, col4 = st.columns(4)
@@ -699,7 +998,7 @@ def main():
                     'value_added': 'sum',
                     'taxes_subsidies': 'sum'
                 }).round(2)
-                st.dataframe(sector_summary, use_container_width=True)
+                st.dataframe(sector_summary, use_container_width=True, height=400)
         
         with col2:
             st.subheader("Distribución Fiscal")
@@ -725,105 +1024,245 @@ def main():
         with st.expander("ℹ️ Convención de signos"):
             st.markdown(DOCS["tax_convention"])
     
+    # =========================================================================
     # TAB 2: COMPARACIÓN
-    with tabs[1]:
-        st.header("🌍 Comparación")
+    # =========================================================================
+    with tabs[2]:
+        st.header("🌍 Comparación entre Países/Años")
         
         country_comparison = analyzer.get_comparison_by_country()
         if country_comparison is not None and len(country_comparison) > 0:
-            st.subheader("Por País")
-            st.dataframe(country_comparison.round(2), use_container_width=True)
+            st.subheader("📊 Comparación por País")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.dataframe(country_comparison.round(2), use_container_width=True)
+            with col2:
+                if PLOTLY_AVAILABLE:
+                    fig = px.bar(country_comparison, x='country', y='total_output',
+                                color='avg_tax_rate_pct', color_continuous_scale='RdYlGn',
+                                title='Producción Total por País')
+                    st.plotly_chart(fig, use_container_width=True)
             
             if PLOTLY_AVAILABLE:
-                fig = px.bar(country_comparison, x='country', y='total_output', 
-                            color='avg_tax_rate_pct', title='Producción por País')
-                st.plotly_chart(fig, use_container_width=True)
+                col1, col2 = st.columns(2)
+                with col1:
+                    fig = px.bar(country_comparison, x='country', 
+                                y=['n_subsidized', 'n_taxed'], barmode='group',
+                                title='Sectores Subsidiados vs Gravados')
+                    st.plotly_chart(fig, use_container_width=True)
+                with col2:
+                    fig = px.bar(country_comparison, x='country', y='total_taxes',
+                                color=country_comparison['total_taxes'].apply(
+                                    lambda x: 'Subsidio Neto' if x > 0 else 'Impuesto Neto'),
+                                title='Balance Fiscal por País')
+                    st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Selecciona múltiples países para ver comparación.")
+            st.info("Selecciona múltiples países para ver la comparación.")
+        
+        st.markdown("---")
         
         year_comparison = analyzer.get_comparison_by_year()
         if year_comparison is not None and len(year_comparison) > 0:
-            st.subheader("Por Año")
-            st.dataframe(year_comparison.round(2), use_container_width=True)
+            st.subheader("📈 Evolución Temporal")
             
-            if PLOTLY_AVAILABLE:
-                fig = px.line(year_comparison, x='year', y='total_output', 
-                             markers=True, title='Evolución Temporal')
-                st.plotly_chart(fig, use_container_width=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.dataframe(year_comparison.round(2), use_container_width=True)
+            with col2:
+                if PLOTLY_AVAILABLE:
+                    fig = px.line(year_comparison, x='year', y='total_output',
+                                 markers=True, title='Evolución de la Producción')
+                    st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Selecciona múltiples años para ver evolución.")
+            st.info("Selecciona múltiples años para ver la evolución temporal.")
     
+    # =========================================================================
     # TAB 3: MATRICES
-    with tabs[2]:
-        st.header("🔢 Matrices I-O")
+    # =========================================================================
+    with tabs[3]:
+        st.header("🔢 Matrices Input-Output")
         
         if len(analyzer.countries) > 1 or len(analyzer.years) > 1:
-            st.info(f"Matrices agregadas: {len(analyzer.countries)} país(es), {len(analyzer.years)} año(s)")
+            st.info(f"⚠️ Matrices agregadas para {len(analyzer.countries)} país(es) y {len(analyzer.years)} año(s)")
         
-        matrix_choice = st.selectbox("Matriz:", ["Z - Consumo Intermedio", "A - Coeficientes", "L - Leontief"])
+        matrix_choice = st.selectbox(
+            "Seleccionar matriz:",
+            ["Z - Consumo Intermedio", "A - Coeficientes Técnicos", "L - Leontief"]
+        )
         
+        # Mostrar documentación según matriz
         if matrix_choice == "Z - Consumo Intermedio":
             matrix_data = analyzer.Z
-        elif matrix_choice == "A - Coeficientes":
+            with st.expander("ℹ️ ¿Qué es la Matriz Z?", expanded=True):
+                st.markdown(DOCS["matrix_z"])
+        elif matrix_choice == "A - Coeficientes Técnicos":
             matrix_data = analyzer.A
+            with st.expander("ℹ️ ¿Qué es la Matriz A?", expanded=True):
+                st.markdown(DOCS["matrix_a"])
         else:
             matrix_data = analyzer.L
+            with st.expander("ℹ️ ¿Qué es la Matriz L?", expanded=True):
+                st.markdown(DOCS["matrix_l"])
         
         if PLOTLY_AVAILABLE and analyzer.n_sectors > 0:
-            fig = px.imshow(matrix_data, x=analyzer.sectors, y=analyzer.sectors,
-                           color_continuous_scale='Blues', title=matrix_choice)
+            fig = px.imshow(
+                matrix_data,
+                x=analyzer.sectors,
+                y=analyzer.sectors,
+                color_continuous_scale='Blues',
+                title=matrix_choice,
+                labels={'x': 'Sector (destino)', 'y': 'Sector (origen)', 'color': 'Valor'}
+            )
             fig.update_layout(height=500)
             st.plotly_chart(fig, use_container_width=True)
         
-        with st.expander("Ver tabla"):
+        with st.expander("Ver matriz en formato tabla"):
             df_matrix = pd.DataFrame(matrix_data, index=analyzer.sectors, columns=analyzer.sectors)
             st.dataframe(df_matrix.round(4), use_container_width=True)
     
+    # =========================================================================
     # TAB 4: MULTIPLICADORES
-    with tabs[3]:
-        st.header("📊 Multiplicadores")
+    # =========================================================================
+    with tabs[4]:
+        st.header("📊 Multiplicadores y Clasificación Sectorial")
+        
+        with st.expander("ℹ️ ¿Cómo se calculan e interpretan?", expanded=False):
+            st.markdown(DOCS["multipliers"])
         
         multipliers_df = analyzer.compute_multipliers()
         
         if len(multipliers_df) > 0:
             col1, col2 = st.columns(2)
+            
             with col1:
+                st.subheader("Tabla de Multiplicadores")
                 st.dataframe(multipliers_df.round(4), use_container_width=True)
+            
             with col2:
-                if PLOTLY_AVAILABLE:
-                    fig = px.scatter(multipliers_df, x='bl_normalized', y='fl_normalized',
-                                    text='sector', color='classification',
-                                    title='Clasificación Sectorial')
-                    fig.add_hline(y=1, line_dash="dash", opacity=0.5)
-                    fig.add_vline(x=1, line_dash="dash", opacity=0.5)
-                    fig.update_traces(textposition='top center')
-                    st.plotly_chart(fig, use_container_width=True)
+                max_idx = multipliers_df['type_I_multiplier'].idxmax()
+                min_idx = multipliers_df['type_I_multiplier'].idxmin()
+                
+                st.metric("Mayor Multiplicador",
+                         f"{multipliers_df.loc[max_idx, 'sector']}",
+                         f"{multipliers_df.loc[max_idx, 'type_I_multiplier']:.4f}")
+                st.metric("Menor Multiplicador",
+                         f"{multipliers_df.loc[min_idx, 'sector']}",
+                         f"{multipliers_df.loc[min_idx, 'type_I_multiplier']:.4f}")
+            
+            st.subheader("Diagrama de Clasificación Sectorial")
+            
+            if PLOTLY_AVAILABLE:
+                fig = px.scatter(
+                    multipliers_df,
+                    x='bl_normalized',
+                    y='fl_normalized',
+                    text='sector',
+                    color='classification',
+                    size='type_I_multiplier',
+                    color_discrete_map={
+                        'Sector Clave': '#dc3545',
+                        'Forward Oriented': '#007bff',
+                        'Backward Oriented': '#28a745',
+                        'Linkages Débiles': '#6c757d'
+                    },
+                    title='Clasificación Sectorial por Linkages'
+                )
+                fig.add_hline(y=1, line_dash="dash", line_color="gray", opacity=0.5,
+                             annotation_text="FL promedio")
+                fig.add_vline(x=1, line_dash="dash", line_color="gray", opacity=0.5,
+                             annotation_text="BL promedio")
+                fig.update_traces(textposition='top center')
+                fig.update_layout(height=500,
+                                 xaxis_title="Backward Linkage (norm) - Demandante",
+                                 yaxis_title="Forward Linkage (norm) - Proveedor")
+                st.plotly_chart(fig, use_container_width=True)
     
+    # =========================================================================
     # TAB 5: HEF
-    with tabs[4]:
-        st.header("💰 Análisis HEF")
+    # =========================================================================
+    with tabs[5]:
+        st.header("💰 Extracción Hipotética Fiscal (HEF)")
+        
+        with st.expander("ℹ️ ¿Qué es el método HEF?", expanded=False):
+            st.markdown(DOCS["hef_method"])
+        
+        st.markdown(f"**Parámetro actual:** Elasticidad = `{elasticity}`")
         
         hef_results = analyzer.fiscal_hypothetical_extraction(elasticity=elasticity)
         
         if len(hef_results) > 0:
             col1, col2 = st.columns(2)
+            
             with col1:
+                st.subheader("Resultados HEF")
                 display_cols = ['sector', 'tax_type', 'tax_original', 'tax_rate_pct', 'relative_impact_pct']
                 st.dataframe(hef_results[display_cols].round(4), use_container_width=True)
+            
             with col2:
-                if PLOTLY_AVAILABLE:
-                    fig = px.bar(hef_results.sort_values('relative_impact_pct'),
-                                x='relative_impact_pct', y='sector', orientation='h',
-                                color='tax_type', title='Impacto HEF')
-                    fig.add_vline(x=0, line_dash="dash")
+                max_idx = hef_results['relative_impact_pct'].abs().idxmax()
+                max_row = hef_results.loc[max_idx]
+                
+                st.metric("Mayor Impacto Sistémico",
+                         max_row['sector'],
+                         f"{max_row['relative_impact_pct']:+.4f}%")
+                
+                st.info("""
+                **Interpretación:**
+                - Eliminar **IMPUESTO** (T<0) → Costos ↓ → Producción **↑**
+                - Eliminar **SUBSIDIO** (T>0) → Costos ↑ → Producción **↓**
+                """)
+            
+            if PLOTLY_AVAILABLE:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    df_sorted = hef_results.sort_values('relative_impact_pct')
+                    fig = px.bar(
+                        df_sorted,
+                        x='relative_impact_pct',
+                        y='sector',
+                        orientation='h',
+                        color='tax_type',
+                        color_discrete_map={'Subsidio': '#28a745', 'Impuesto': '#dc3545'},
+                        title='Impacto de ELIMINAR el Componente Fiscal'
+                    )
+                    fig.add_vline(x=0, line_dash="dash", line_color="gray")
+                    fig.update_layout(xaxis_title="Cambio en Producción Total (%)")
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    fig = px.scatter(
+                        hef_results,
+                        x='tax_original',
+                        y='relative_impact_pct',
+                        text='sector',
+                        color='tax_type',
+                        size=hef_results['tax_original'].abs(),
+                        color_discrete_map={'Subsidio': '#28a745', 'Impuesto': '#dc3545'},
+                        title='T Original vs Impacto HEF'
+                    )
+                    fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+                    fig.add_vline(x=0, line_dash="dash", line_color="gray", opacity=0.5)
+                    fig.update_traces(textposition='top center')
+                    fig.update_layout(xaxis_title="T Original", yaxis_title="Impacto (%)")
                     st.plotly_chart(fig, use_container_width=True)
     
+    # =========================================================================
     # TAB 6: PROPAGACIÓN
-    with tabs[5]:
-        st.header("🌊 Propagación")
+    # =========================================================================
+    with tabs[6]:
+        st.header("🌊 Propagación de Shocks")
+        
+        with st.expander("ℹ️ ¿Cómo funciona la propagación?", expanded=False):
+            st.markdown(DOCS["shock_propagation"])
+        
+        st.markdown(f"""
+        **Parámetros:** Magnitud = `{shock_magnitude*100:.0f}%`, Rondas = `{shock_iterations}`
+        """)
         
         if analyzer.n_sectors > 0:
-            shock_sector = st.selectbox("Sector origen:", analyzer.sectors)
+            shock_sector = st.selectbox("Sector origen del shock:", analyzer.sectors)
             shock_idx = analyzer.sector_to_idx.get(shock_sector, 0)
             
             shock_result = analyzer.simulate_shock(shock_idx, shock_magnitude, shock_iterations)
@@ -836,37 +1275,75 @@ def main():
             with col3:
                 initial = shock_magnitude * analyzer.X[shock_idx]
                 ratio = shock_result['total_effect'] / initial if initial > 0 else 0
-                st.metric("Multiplicador", f"{ratio:.4f}x")
+                st.metric("Ratio Multiplicador", f"{ratio:.4f}x")
             
             if PLOTLY_AVAILABLE:
                 col1, col2 = st.columns(2)
+                
                 with col1:
                     fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=list(range(len(shock_result['trajectory']))),
-                                            y=shock_result['trajectory'], mode='lines+markers'))
-                    fig.update_layout(title='Propagación por Ronda')
+                    fig.add_trace(go.Scatter(
+                        x=list(range(len(shock_result['trajectory']))),
+                        y=shock_result['trajectory'],
+                        mode='lines+markers',
+                        fill='tozeroy',
+                        fillcolor='rgba(0,100,255,0.2)'
+                    ))
+                    fig.update_layout(title='Propagación por Ronda',
+                                     xaxis_title='Ronda (k)',
+                                     yaxis_title='ε⁽ᵏ⁾')
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with col2:
                     cumulative = shock_result['cumulative']
                     sorted_idx = np.argsort(cumulative)[::-1]
+                    colors = ['orange' if analyzer.sectors[i] == shock_sector 
+                             else 'steelblue' for i in sorted_idx]
+                    
                     fig = go.Figure()
-                    fig.add_trace(go.Bar(x=cumulative[sorted_idx],
-                                        y=[analyzer.sectors[i] for i in sorted_idx],
-                                        orientation='h'))
-                    fig.update_layout(title='Efecto Acumulado')
+                    fig.add_trace(go.Bar(
+                        x=cumulative[sorted_idx],
+                        y=[analyzer.sectors[i] for i in sorted_idx],
+                        orientation='h',
+                        marker_color=colors
+                    ))
+                    fig.update_layout(title='Efecto Acumulado por Sector')
                     st.plotly_chart(fig, use_container_width=True)
             
-            st.subheader("🌐 Efectos de Red")
+            st.markdown("---")
+            st.subheader("🌐 Efectos de Red (Spillovers Fiscales)")
+            
+            with st.expander("ℹ️ ¿Qué son los efectos de red?", expanded=False):
+                st.markdown(DOCS["network_effects"])
+            
             network_effects = analyzer.compute_network_effects()
+            
+            if PLOTLY_AVAILABLE and len(network_effects) > 0:
+                fig = px.bar(
+                    network_effects,
+                    x='sector',
+                    y=['own_tax_rate', 'network_effect'],
+                    barmode='group',
+                    title='Tasa Fiscal Propia vs Efecto de Red',
+                    labels={'value': '%', 'variable': 'Tipo'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
             st.dataframe(network_effects.round(2), use_container_width=True)
     
+    # =========================================================================
     # TAB 7: VERIFICACIÓN
-    with tabs[6]:
-        st.header("✅ Verificación")
+    # =========================================================================
+    with tabs[7]:
+        st.header("✅ Verificación de Cálculos")
+        
+        st.markdown("""
+        Verifica que los cálculos cumplen las identidades fundamentales del análisis Input-Output.
+        """)
         
         checks = analyzer.verify_calculations()
         
+        st.subheader("Identidades Fundamentales")
         for name, passed in checks.items():
             if passed:
                 st.success(f"✅ {name}")
@@ -874,21 +1351,37 @@ def main():
                 st.warning(f"⚠️ {name}")
         
         st.markdown("---")
+        
         col1, col2 = st.columns(2)
         
         with col1:
+            st.subheader("Balance Fiscal")
             st.write(f"**Subsidios (T>0):** {(analyzer.T > 0).sum()} sectores")
             st.write(f"**Impuestos (T<0):** {(analyzer.T < 0).sum()} sectores")
             st.write(f"**Balance neto:** {analyzer.T.sum():+,.2f}")
+            
+            if analyzer.T.sum() < 0:
+                st.write(f"→ El gobierno **recauda** neto: {abs(analyzer.T.sum()):,.2f}")
+            else:
+                st.write(f"→ El gobierno **subsidia** neto: {analyzer.T.sum():,.2f}")
         
         with col2:
+            st.subheader("📥 Exportar Resultados")
+            
             mult_csv = analyzer.compute_multipliers().to_csv(index=False)
-            st.download_button("📊 Multiplicadores", mult_csv, "multiplicadores.csv")
+            st.download_button("📊 Multiplicadores", mult_csv, "multiplicadores.csv", "text/csv")
             
             hef_df = analyzer.fiscal_hypothetical_extraction()
             if 'X_new' in hef_df.columns:
                 hef_df = hef_df.drop(columns=['X_new'])
-            st.download_button("💰 HEF", hef_df.to_csv(index=False), "hef.csv")
+            st.download_button("💰 Resultados HEF", hef_df.to_csv(index=False), "hef_results.csv", "text/csv")
+            
+            net_csv = analyzer.compute_network_effects().to_csv(index=False)
+            st.download_button("🌐 Efectos de Red", net_csv, "network_effects.csv", "text/csv")
+
+# ============================================================================
+# EJECUTAR
+# ============================================================================
 
 if __name__ == "__main__":
     main()
